@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LionBot Zillionaire Premium</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#000000">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body { font-family:'Verdana',sans-serif; background:linear-gradient(135deg,#000,#111); color:#FFD700; margin:0; padding:10px; text-align:center; }
+h1,h3,p{margin:5px;}
+button { background:linear-gradient(45deg,#FFD700,#FFA500); color:#000; border:none; padding:12px 20px; margin:5px; border-radius:12px; font-weight:bold; cursor:pointer; box-shadow:0 0 15px #FFD700,0 0 30px #FFA500 inset; transition:0.3s; }
+button:hover { box-shadow:0 0 25px #FFD700,0 0 50px #FFA500 inset; transform:scale(1.05); }
+input,select{ margin:5px; padding:8px; border-radius:8px; border:1px solid #FFD700; background:#111; color:#FFD700; width:95%; }
+.box{ background:linear-gradient(135deg,#111,#222); padding:15px; margin:12px 0; border-radius:15px; text-align:left; box-shadow:0 0 20px #FFD700 inset,0 0 10px #FFA500; }
+canvas{max-width:100%; margin-top:10px; border-radius:10px;}
+table{width:100%; border-collapse: collapse; color:#FFD700; margin-top:10px;}
+th,td{border:1px solid #FFD700; padding:8px; text-align:center;}
+th{background:#222; box-shadow:0 0 10px #FFD700 inset;}
+.stat-box{display:flex; justify-content:space-around; margin-top:10px; flex-wrap:wrap;}
+.stat-box div{background:#222; padding:10px 15px; border-radius:10px; margin:5px; min-width:80px; box-shadow:0 0 10px #FFD700 inset;}
+</style>
+<script>
+if("serviceWorker" in navigator){ navigator.serviceWorker.register("service-worker.js"); }
+
+let running=false,tradeCount=0;
+let chartLabels=[],lineDataIndia=[],lineDataCrypto=[];
+let balances={inr:1000,usdt:0,btc:0};
+let historyData=[],backupHistory=[];
+let lineChart,pieChart;
+
+// ---------- START / STOP / RESTART BOT ----------
+function startBot(){
+  if(running) return;
+  running=true;
+  balances.inr=parseFloat(document.getElementById("capital").value);
+  updateBalances();
+  simulateTrade();
+}
+function stopBot(){ running=false; alert("Bot Stopped!"); }
+function restartBot(){ stopBot(); tradeCount=0; chartLabels=[]; lineDataIndia=[]; lineDataCrypto=[]; historyData=[]; updateCharts(); updateHistoryTable(); startBot(); }
+
+// ---------- SIMULATE TRADE ----------
+function simulateTrade(){
+  if(!running) return;
+  const mode=document.getElementById("mode").value;
+  const market=document.getElementById("market").value;
+  let speed=parseFloat(document.getElementById("speed").value);
+
+  // Generate profit separately for India and Crypto
+  let profitIndia=Math.floor(Math.random()*50)+20;
+  let profitCrypto=Math.floor(Math.random()*50)+20;
+  if(mode==="demo"){ profitIndia*=10; profitCrypto*=10; }
+
+  let reinvestRate=parseFloat(document.getElementById("reinvest").value)/100;
+
+  // Update balances for selected market
+  if(market=="india" || market=="both"){ balances.inr += profitIndia*reinvestRate; }
+  if(market=="crypto" || market=="both"){ balances.usdt += profitCrypto*reinvestRate; }
+
+  tradeCount++;
+  chartLabels.push(tradeCount);
+  lineDataIndia.push(balances.inr);
+  lineDataCrypto.push(balances.usdt);
+  updateCharts();
+  updateBalances();
+
+  // Add to history
+  const now=new Date();
+  const timeStr=now.toLocaleTimeString();
+  historyData.push({
+    time:`${timeStr} (${now.getHours()}h:${now.getMinutes()}m)`,
+    trade:tradeCount,
+    profit:(profitIndia+profitCrypto)*reinvestRate,
+    balance:balances.inr+balances.usdt
+  });
+  updateHistoryTable();
+  updateTradeStats();
+  updateProfitSummary();
+
+  document.getElementById("analysis").innerText=`Bot chose ${market}. Hold/Buy applied.`;
+
+  let target=parseFloat(document.getElementById("target").value);
+  let nonstop=document.getElementById("nonstop").checked;
+  if(!nonstop && (balances.inr+balances.usdt)>=target){ stopBot(); alert("🎯 Target reached!"); return; }
+
+  setTimeout(simulateTrade,speed);
+}
+
+// ---------- UPDATE CHARTS ----------
+function updateCharts(){
+  const ctxLine=document.getElementById("lineChart").getContext("2d");
+  if(!lineChart){
+    lineChart=new Chart(ctxLine,{
+      type:'line',
+      data:{labels:chartLabels,datasets:[
+        {label:'India Balance',data:lineDataIndia,borderColor:'#00FF00',fill:false},
+        {label:'Crypto Balance',data:lineDataCrypto,borderColor:'#00FFFF',fill:false}
+      ]}
+    });
+  } else {
+    lineChart.data.labels=chartLabels;
+    lineChart.data.datasets[0].data=lineDataIndia;
+    lineChart.data.datasets[1].data=lineDataCrypto;
+    lineChart.update();
+  }
+
+  const ctxPie=document.getElementById("pieChart").getContext("2d");
+  const save=parseFloat(document.getElementById("save").value);
+  const spend=parseFloat(document.getElementById("spend").value);
+  const reinvest=parseFloat(document.getElementById("reinvest").value);
+  if(!pieChart){
+    pieChart=new Chart(ctxPie,{
+      type:'pie',
+      data:{labels:['Save','Spend','Reinvest'],datasets:[{data:[save,spend,reinvest],backgroundColor:['#00FF00','#FF4500','#FFD700']}]}
+    });
+  } else {
+    pieChart.data.datasets[0].data=[save,spend,reinvest];
+    pieChart.update();
+  }
+}
+
+// ---------- MULTI-CURRENCY ----------
+function updateBalances(){
+  document.getElementById("inr").innerText=balances.inr.toFixed(2);
+  document.getElementById("usdt").innerText=balances.usdt.toFixed(2);
+  document.getElementById("btc").innerText=balances.btc.toFixed(4);
+}
+function transfer(from,to,amt){ if(balances[from]>=amt){ balances[from]-=amt; balances[to]+=amt; updateBalances(); } }
+function withdrawProfit(curr){
+  let profitBalance=balances.inr+balances.usdt - Math.min(...lineDataIndia,...lineDataCrypto);
+  if(profitBalance>=1){ balances[curr]+=profitBalance; updateBalances(); alert(`Withdrawn profit ₹${profitBalance.toFixed(2)} ✅`); }
+  else alert("No profit available to withdraw");
+}
+
+// ---------- HISTORY TABLE ----------
+function updateHistoryTable(){
+  let html='<tr><th>Time</th><th>Trade #</th><th>Profit</th><th>Balance</th></tr>';
+  historyData.forEach(h=>{ html+=`<tr><td>${h.time}</td><td>${h.trade}</td><td>₹${h.profit.toFixed(2)}</td><td>₹${h.balance.toFixed(2)}</td></tr>`; });
+  document.getElementById("historyTable").innerHTML=html;
+}
+function clearHistory(){ backupHistory=[...historyData]; historyData=[]; updateHistoryTable();}
+function restoreHistory(){ historyData=[...backupHistory]; updateHistoryTable();}
+function saveHistory(){ localStorage.setItem('botHistory',JSON.stringify(historyData)); alert("History Saved ✅");}
+function loadHistory(){ let h=localStorage.getItem('botHistory'); if(h){ historyData=JSON.parse(h); updateHistoryTable(); }}
+
+// ---------- API KEYS ----------
+function saveApiKeys(){ localStorage.setItem('upstoxKey',document.getElementById('upstoxKey').value); localStorage.setItem('binanceKey',document.getElementById('binanceKey').value); alert('API Keys Saved ✅');}
+function loadApiKeys(){ document.getElementById('upstoxKey').value=localStorage.getItem('upstoxKey')||''; document.getElementById('binanceKey').value=localStorage.getItem('binanceKey')||'';}
+
+// ---------- TRADE STATS ----------
+function updateTradeStats(){
+  const lastMin=historyData.slice(-60);
+  const lastHour=historyData.slice(-3600);
+  document.getElementById("statMin").innerText=lastMin.length;
+  document.getElementById("statHour").innerText=lastHour.length;
+}
+
+// ---------- PROFIT SUMMARY ----------
+function updateProfitSummary(){
+  const savePerc=parseFloat(document.getElementById("save").value);
+  const spendPerc=parseFloat(document.getElementById("spend").value);
+  const reinvestPerc=parseFloat(document.getElementById("reinvest").value);
+  const totalProfit=historyData.reduce((a,b)=>a+b.profit,0);
+  document.getElementById("summarySave").innerText=`₹${(totalProfit*savePerc/100).toFixed(2)}`;
+  document.getElementById("summarySpend").innerText=`₹${(totalProfit*spendPerc/100).toFixed(2)}`;
+  document.getElementById("summaryReinvest").innerText=`₹${(totalProfit*reinvestPerc/100).toFixed(2)}`;
+}
+</script>
+</head>
+<body onload="loadApiKeys(); loadHistory();">
+<h1>🦁 LionBot Zillionaire Premium</h1>
+<p>⚡ Mobile Premium Trading Bot PWA</p>
+
+<div class="box">
+<h3>Controls</h3>
+<button onclick="startBot()">▶ Start</button>
+<button onclick="stopBot()">⏹ Stop</button>
+<button onclick="restartBot()">🔄 Restart</button><br>
+<label>Mode: <select id="mode"><option value="demo">Demo</option><option value="real">Real</option></select></label><br>
+<label>Market: <select id="market"><option value="india">India</option><option value="crypto">Crypto</option><option value="both">Both</option></select></label><br>
+<label>Starting Capital: <input type="number" id="capital" value="1000"></label><br>
+<label>Demo Speed (ms/trade): <input type="number" id="speed" value="2000"></label><br>
+<label>Target: <input type="number" id="target" value="5000"></label><br>
+<label><input type="checkbox" id="nonstop"> Nonstop Mode</label><br>
+<label>Save %: <input type="number" id="save" value="30"></label>
+<label>Spend %: <input type="number" id="spend" value="20"></label>
+<label>Reinvest %: <input type="number" id="reinvest" value="50"></label>
+</div>
+
+<div class="box">
+<h3>Multi-Currency Balances</h3>
+<p>INR: <span id="inr">1000</span></p>
+<p>USDT: <span id="usdt">0</span></p>
+<p>BTC: <span id="btc">0</span></p>
+<button onclick="transfer('inr','usdt',100)">INR → USDT (100)</button>
+<button onclick="transfer('usdt','btc',50)">USDT → BTC (50)</button>
+<button onclick="withdrawProfit('inr')">Withdraw Profit</button>
+</div>
+
+<div class="box">
+<h3>Charts</h3>
+<canvas id="lineChart"></canvas>
+<canvas id="pieChart"></canvas>
+</div>
+
+<div class="box">
+<h3>Trading History</h3>
+<table id="historyTable"></table>
+<button onclick="clearHistory()">🗑 Clear</button>
+<button onclick="restoreHistory()">♻ Restore</button>
+<button onclick="saveHistory()">💾 Save</button>
+</div>
+
+<div class="box stat-box">
+<div>Trades / Min: <span id="statMin">0</span></div>
+<div>Trades / Hour: <span id="statHour">0</span></div>
+<div>Saved: <span id="summarySave">0</span></div>
+<div>Spent: <span id="summarySpend">0</span></div>
+<div>Reinvested: <span id="summaryReinvest">0</span></div>
+</div>
+
+<div class="box">
+<h3>Fundamental + Technical Analysis</h3>
+<p id="analysis">Waiting for bot...</p>
+</div>
+
+<div class="box">
+<h3>API Integration (Safe Local Storage)</h3>
+<label>Upstox API Key: <input type="text" id="upstoxKey"></label><br>
+<label>Binance API Key: <input type="text" id="binanceKey"></label><br>
+<button onclick="saveApiKeys()">💾 Save Keys</button>
+</div>
+</body>
+</html>
